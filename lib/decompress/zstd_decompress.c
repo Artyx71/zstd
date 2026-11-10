@@ -1320,7 +1320,9 @@ size_t ZSTD_decompressContinue(ZSTD_DCtx* dctx, void* dst, size_t dstCapacity, c
                 dctx->stage = bp.lastBlock ? ZSTDds_decompressLastBlock : ZSTDds_decompressBlock;
                 return 0;
             }
-            /* empty block */
+            /* Only raw blocks may have an empty payload. */
+            RETURN_ERROR_IF(bp.blockType == bt_compressed, corruption_detected,
+                            "Empty compressed block");
             if (bp.lastBlock) {
                 if (dctx->fParams.checksumFlag) {
                     dctx->expected = 4;

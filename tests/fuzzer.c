@@ -4392,6 +4392,52 @@ static int basicUnitTests(U32 const seed, double compressibility)
         ZSTD_freeDCtx(dctx);
     }
 
+    DISPLAYLEVEL(3, "test%3i : reject empty compressed blocks : ", testNb++);
+    {
+        ZSTD_DCtx* const dctx = ZSTD_createDCtx();
+        unsigned hasContentSize, lastBlock, compressed, fragmented;
+        CHECK(dctx != NULL);
+        for (hasContentSize = 0; hasContentSize <= 1; ++hasContentSize) {
+            for (lastBlock = 0; lastBlock <= 1; ++lastBlock) {
+                for (compressed = 0; compressed <= 1; ++compressed) {
+                    BYTE frame[] = { 0x28, 0xb5, 0x2f, 0xfd, 0, 0,
+                                     0, 0, 0, 1, 0, 0 };
+                    size_t const frameSize = lastBlock ? 9 : sizeof(frame);
+                    size_t result;
+                    frame[4] = hasContentSize ? 0x20 : 0;
+                    frame[6] = (BYTE)((compressed ? 4 : 0) | lastBlock);
+                    result = ZSTD_decompressDCtx(dctx, decodedBuffer, 1,
+                                                frame, frameSize);
+                    if (compressed) {
+                        CHECK_EQ(ZSTD_getErrorCode(result), ZSTD_error_corruption_detected);
+                    } else {
+                        CHECK_EQ(result, 0);
+                    }
+                    for (fragmented = 0; fragmented <= 1; ++fragmented) {
+                        ZSTD_inBuffer in = { frame, fragmented ? 1 : frameSize, 0 };
+                        ZSTD_outBuffer out = { decodedBuffer, 1, 0 };
+                        CHECK_Z(ZSTD_DCtx_reset(dctx, ZSTD_reset_session_and_parameters));
+                        do {
+                            result = ZSTD_decompressStream(dctx, &out, &in);
+                            if (ZSTD_isError(result) || result == 0)
+                                break;
+                            CHECK_EQ(in.pos, in.size);
+                            CHECK(in.size < frameSize);
+                            ++in.size;
+                        } while (1);
+                        if (compressed) {
+                            CHECK_EQ(ZSTD_getErrorCode(result), ZSTD_error_corruption_detected);
+                        } else {
+                            CHECK(result == 0 && in.pos == frameSize && out.pos == 0);
+                        }
+                    }
+                }
+            }
+        }
+        ZSTD_freeDCtx(dctx);
+        DISPLAYLEVEL(3, "OK \n");
+    }
+
     DISPLAYLEVEL(3, "test%3i : Decompression parameter reset test : ", testNb++);
     {
         ZSTD_DCtx* const dctx = ZSTD_createDCtx();
